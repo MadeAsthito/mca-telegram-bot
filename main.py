@@ -21,7 +21,14 @@ SELECT_MENU, ASKING_PARAMS = range(2)
 
 # COMMANDS
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Bot on start_command()")
+    inbox_id = await _insert_inbox(update.message)
+
     list_menu = await get_list_menu()
+
+    
+    context.user_data['user_id'] = update.message.chat.id               # GET user id
+    context.user_data['message_type'] = update.message.chat.type           # CHECK IF chat type (Group / Personal Chat)
 
     response: str = f'Hi, this is a testing SI Campus Bot!\nSend /cancel to stop the command.\n\nWhat do you wanted to do ?\n'
 
@@ -43,9 +50,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(input_keyboard)
     )
 
+    await _insert_outbox(update.message, inbox_id, response + " " + str(input_keyboard))
+
     return SELECT_MENU
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Bot on help_command()")
+    inbox_id = await _insert_inbox(update.message)
+
     response = (
         "Welcome to the SI Campus Bot!\n\n"
         "Here are the available commands:\n"
@@ -55,6 +67,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n"
         "Note: You can also interact with the bot by clicking the provided buttons."
     )
+
+    await _insert_outbox(update.message, inbox_id, response)
     await update.message.reply_text(response)
 
 
@@ -64,6 +78,9 @@ async def asking_params(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
     menu_id = query.data
+
+    inbox_id = await _insert_inbox_inline(menu_id, context.user_data['user_id'], context.user_data['message_type'])
+
 
     menu_query, menu_params = await get_query_menu(menu_id)
 
@@ -86,6 +103,8 @@ async def asking_params(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['menu_query'] = menu_query
 
     print('Bot: ', response)
+    
+    await _insert_outbox_inline(menu_id, context.user_data['user_id'], context.user_data['message_type'], inbox_id, response)
     await query.answer()
     await query.edit_message_text(text=response)
     # await query.message.reply_text(response)
@@ -94,29 +113,30 @@ async def asking_params(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASKING_PARAMS
     else:
         res_query = await get_query(menu_id, menu_query)
-
-        response = await generate_table(res_query)
+        response = await _generate_table(res_query)
 
         print('Bot: \n', response)
+        await _insert_outbox_inline(menu_id, context.user_data['user_id'], context.user_data['message_type'], inbox_id, response.get_string())
         await query.message.reply_text(f'```{response}```', parse_mode=ParseMode.MARKDOWN_V2)
         
+
         response = "You can start over by typing /start."
         
         print('Bot: \n', response)
+        await _insert_outbox_inline(menu_id, context.user_data['user_id'], context.user_data['message_type'], inbox_id, response)
         await query.message.reply_text(response)
         
         return ConversationHandler.END
 
 async def query_result(update: Update, context: ContextTypes.DEFAULT_TYPE):    
     print("Bot on query_result()")
+    inbox_id = await _insert_inbox(update.message)
 
     menu_query = context.user_data['menu_query']
     menu_id = context.user_data['menu_id']
 
-    user_id: str = update.message.chat.id               # GET user id
     message_type: str = update.message.chat.type        # CHECK IF chat type (Group / Personal Chat)
     text: str = update.message.text                     # GET message
-    current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if message_type == 'group':
         if BOT_USERNAME in text:
@@ -129,23 +149,12 @@ async def query_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print('\tQuery: ', menu_query, '\n\tParams: ', params, '\n\tMenu ID: ', menu_id)
 
     if res_query:
-        headers = list(res_query[0].keys())
-        table = pt.PrettyTable(headers)
-
-        for header in headers: 
-            table.align[header] = 'l'
-            
-        
-        for row in res_query:
-            temp_row = []
-            for i in range(len(headers)):
-                temp_row.append(row[headers[i]])
-            table.add_row(temp_row)
-
-        response = table
+        response = await _generate_table(res_query)
+        await _insert_outbox(update.message, inbox_id, response.get_string())
         await update.message.reply_text(f'```{response}```', parse_mode=ParseMode.MARKDOWN_V2)
     else:
         response = "Data not found! Please try to enter the correct input / format."
+        await _insert_outbox(update.message, inbox_id, response)
         await update.message.reply_text(response)
 
     # REPLY TO USER
@@ -153,49 +162,43 @@ async def query_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = "You can start over by typing /start."
     print('Bot: \n', response)
+    await _insert_outbox(update.message, inbox_id, response)
     await update.message.reply_text(response)
 
     return ConversationHandler.END
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id: str = update.message.chat.id               # GET user id
-    message_type: str = update.message.chat.type        # CHECK IF chat type (Group / Personal Chat)
-    text: str = update.message.text                     # GET message
-    current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):  
+    print("Bot on handle_message()")
+    inbox_id = await _insert_inbox(update.message)
 
-    if message_type == 'group':
-        if BOT_USERNAME in text:
-            text = text.replace(BOT_USERNAME, '').strip()
-        else:
-            return
-
-    # SAVED USER MESSAGE TO INBOX
-    inbox_id = str(uuid.uuid4())
-    data = (inbox_id, user_id, text, message_type, current_date_time)
-    result = await insert_inbox(data)
-
-    if result is None: 
+    if inbox_id: 
         response: str = 'Message successfully saved to database!'
     else:
         response: str = 'Message failed to get saved on the database!'
 
-    # SAVED BOT MESSAGE TO OUTBOX
-    outbox_id = str(uuid.uuid4())
-    data = (outbox_id, inbox_id, user_id, response, message_type, current_date_time)
-    result = await insert_outbox(data)
-
     # REPLY TO USER
     print('Bot: ', response)
+    await _insert_outbox(update.message, inbox_id, response)
     await update.message.reply_text(response)
 
 
-async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Wrong input, conversation canceled. Send /start to begin again.')
+async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE): 
+    print("Bot on cancel_conv()")
+    inbox_id = await _insert_inbox(update.message)
+    response = 'Wrong input, conversation canceled. Send /start to begin again.'
+
+    await update.message.reply_text(response)
+    await _insert_outbox(update.message, inbox_id, response)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Okay, conversation canceled. Send /start to begin again.')
+    print("Bot on cancel()")
+    inbox_id = await _insert_inbox(update.message)
+    response = 'Okay, conversation canceled. Send /start to begin again.'
+
+    await update.message.reply_text(response)
+    await _insert_outbox(update.message, inbox_id, response)
     return ConversationHandler.END
 
 # ERROR
@@ -203,7 +206,7 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f'Update {update} caused error {context.error}')
 
 # _function
-async def generate_table(data):
+async def _generate_table(data):
     headers = list(data[0].keys())
     table = pt.PrettyTable(headers)
 
@@ -218,6 +221,74 @@ async def generate_table(data):
         table.add_row(temp_row)
     
     return table
+
+async def _insert_outbox(update, inbox_id, response):
+    user_id: str = update.chat.id               # GET user id
+    message_type: str = update.chat.type        # CHECK IF chat type (Group / Personal Chat)
+    text: str = update.text                     # GET message
+    current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if message_type == 'group':
+        if BOT_USERNAME in text:
+            text = text.replace(BOT_USERNAME, '').strip()
+        else:
+            return
+
+    # SAVED BOT MESSAGE TO OUTBOX
+    outbox_id = str(uuid.uuid4())
+    data = (outbox_id, inbox_id, user_id, response, message_type, current_date_time)
+    result = await insert_outbox(data)
+
+    print("Response saved to outbox")
+    
+    return result
+
+async def _insert_outbox_inline(key_id, user_id, message_type, inbox_id, response):
+    text = "Choosing menu no." + key_id
+    current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # SAVED BOT MESSAGE TO OUTBOX
+    outbox_id = str(uuid.uuid4())
+    data = (outbox_id, inbox_id, user_id, response, message_type, current_date_time)
+    result = await insert_outbox(data)
+
+    print("Response saved to outbox")
+
+    return inbox_id
+
+async def _insert_inbox(update):
+    user_id: str = update.chat.id               # GET user id
+    message_type: str = update.chat.type        # CHECK IF chat type (Group / Personal Chat)
+    text: str = update.text                     # GET message
+    current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if message_type == 'group':
+        if BOT_USERNAME in text:
+            text = text.replace(BOT_USERNAME, '').strip()
+        else:
+            return
+
+    # SAVED USER MESSAGE TO INBOX
+    inbox_id = str(uuid.uuid4())
+    data = (inbox_id, user_id, text, message_type, current_date_time)
+    result = await insert_inbox(data)
+
+    print("Message saved to inbox")
+
+    return inbox_id
+
+async def _insert_inbox_inline(key_id, user_id, message_type):
+    text = "Choosing menu no." + key_id
+    current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # SAVED USER MESSAGE TO INBOX
+    inbox_id = str(uuid.uuid4())
+    data = (inbox_id, user_id, text, message_type, current_date_time)
+    result = await insert_inbox(data)
+
+    print("Message saved to inbox")
+
+    return inbox_id
 
 if __name__ == '__main__':
     print("Starting bot...")

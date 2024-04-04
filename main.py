@@ -23,15 +23,15 @@ SELECT_MENU, ASKING_PARAMS = range(2)
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Bot on start_command()")
     inbox_id = await _insert_inbox(update.message)
-
     list_menu = await get_list_menu()
 
-    
-    context.user_data['user_id'] = update.message.chat.id               # GET user id
-    context.user_data['message_type'] = update.message.chat.type           # CHECK IF chat type (Group / Personal Chat)
+    # SET SESSION DATA
+    context.user_data['user_id'] = update.message.chat.id                   # GET user id
+    context.user_data['message_type'] = update.message.chat.type            # CHECK IF chat type (Group / Personal Chat)
 
     response: str = f'Hi, this is a testing SI Campus Bot!\nSend /cancel to stop the command.\n\nWhat do you wanted to do ?\n'
 
+    # MAKE INLINE KEYBOARD
     input_keyboard = []
     index = 1
     arr_input = []
@@ -45,6 +45,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             input_keyboard.append(arr_input)
         index += 1
             
+    # REPLY MESSAGE
     await update.message.reply_text(
         response, 
         reply_markup=InlineKeyboardMarkup(input_keyboard)
@@ -52,6 +53,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await _insert_outbox(update.message, inbox_id, response + " " + str(input_keyboard))
 
+    # RETURN STATE
     return SELECT_MENU
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,17 +77,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # RESPONSE
 async def asking_params(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Bot on asking_params()")
-
     query = update.callback_query
     menu_id = query.data
-
     inbox_id = await _insert_inbox_inline(menu_id, context.user_data['user_id'], context.user_data['message_type'])
 
-
+    # GET QUERY MENU
     menu_query, menu_params = await get_query_menu(menu_id)
-
-
+    # CHECK IF THERE IS PARAMS OR NOT
     if len(menu_params) > 0:
+        # ITERATE MULTIPLE PARAMS
         response = "Please enter your "
         for i in range(len(menu_params)):
             response += menu_params[i]
@@ -94,23 +94,26 @@ async def asking_params(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 response += " | "
         flag_params = 1
-                
     else:
         response = "Processing . . ."
         flag_params = 0
-    
+
+    # SET SESSION DATA
     context.user_data['menu_id'] = menu_id
     context.user_data['menu_query'] = menu_query
 
+
+    # REPLY THE MESSAGE
     print('Bot: ', response)
-    
     await _insert_outbox_inline(menu_id, context.user_data['user_id'], context.user_data['message_type'], inbox_id, response)
     await query.answer()
     await query.edit_message_text(text=response)
-    # await query.message.reply_text(response)
     
-    if flag_params:
-        return ASKING_PARAMS
+    # CHECK IF THERE IS PARAM OR NOT
+    #   Y = RETURN STATE
+    #   N = RETURN QUERY RESULT
+    if flag_params:    
+        return ASKING_PARAMS 
     else:
         res_query = await get_query(menu_id, menu_query)
         response = await _generate_table(res_query)
@@ -132,6 +135,7 @@ async def query_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Bot on query_result()")
     inbox_id = await _insert_inbox(update.message)
 
+    # GET SESSION DATA
     menu_query = context.user_data['menu_query']
     menu_id = context.user_data['menu_id']
 
@@ -144,10 +148,14 @@ async def query_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             return
         
+    # GET PARAMS
     params = tuple(text.split(" | "))
     res_query = await get_query(menu_id, menu_query, params)
     print('\tQuery: ', menu_query, '\n\tParams: ', params, '\n\tMenu ID: ', menu_id)
 
+    # CHECK RESULT_QUERY
+    #   Y = RESPONSE WITH RESULT
+    #   N = ERROR MESSAGE
     if res_query:
         response = await _generate_table(res_query)
         await _insert_outbox(update.message, inbox_id, response.get_string())
@@ -168,6 +176,7 @@ async def query_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# DEFAULT FUNCTION
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):  
     print("Bot on handle_message()")
     inbox_id = await _insert_inbox(update.message)
@@ -182,7 +191,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _insert_outbox(update.message, inbox_id, response)
     await update.message.reply_text(response)
 
-
+# CANCEL FUNCTION
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     print("Bot on cancel_conv()")
     inbox_id = await _insert_inbox(update.message)
@@ -205,7 +214,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f'Update {update} caused error {context.error}')
 
-# _function
+# INNER FUNCTION
 async def _generate_table(data):
     headers = list(data[0].keys())
     table = pt.PrettyTable(headers)
@@ -290,11 +299,12 @@ async def _insert_inbox_inline(key_id, user_id, message_type):
 
     return inbox_id
 
+# MAIN PY
 if __name__ == '__main__':
     print("Starting bot...")
     app = Application.builder().token(TOKEN).build()
 
-    # CONV HANDLER
+    # CONV HANDLER : HANDLE STATE
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start_command)],
         states={

@@ -27,7 +27,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     list_menu = await get_list_menu()
 
     
-    context.user_data['user_id'] = update.message.chat.id               # GET user id
+    context.user_data['user_id'] = update.message.from_user.id               # GET user id
     context.user_data['message_type'] = update.message.chat.type           # CHECK IF chat type (Group / Personal Chat)
 
     response: str = f'Hi, this is a testing SI Campus Bot!\nSend /cancel to stop the command.\n\nWhat do you wanted to do ?\n'
@@ -223,7 +223,7 @@ async def _generate_table(data):
     return table
 
 async def _insert_outbox(update, inbox_id, response):
-    user_id: str = update.chat.id               # GET user id
+    user_id: str = update.from_user.id              # GET user id
     message_type: str = update.chat.type        # CHECK IF chat type (Group / Personal Chat)
     text: str = update.text                     # GET message
     current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -257,7 +257,7 @@ async def _insert_outbox_inline(key_id, user_id, message_type, inbox_id, respons
     return inbox_id
 
 async def _insert_inbox(update):
-    user_id: str = update.chat.id               # GET user id
+    user_id: str = update.from_user.id             # GET user id
     message_type: str = update.chat.type        # CHECK IF chat type (Group / Personal Chat)
     text: str = update.text                     # GET message
     current_date_time: str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

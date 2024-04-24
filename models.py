@@ -44,10 +44,19 @@ async def get_query(menu_id, query, data=None):
 async def get_list_menu():
     conn.commit()
     
-    query: str = "SELECT * FROM list_menu"
+    query: str = """
+        SELECT a.* 
+        FROM list_menu a, user b, role_menu_detail c 
+        WHERE b.ROLE_ID = c.ROLE_ID AND c.MENU_ID = a.MENU_ID
+    """
     cur.execute(query)
     result = cur.fetchall()
 
+    if not result :
+        query: str = "SELECT a.* FROM list_menu a, role_menu_detail b WHERE a.MENU_ID = b.MENU_ID AND b.ROLE_ID = 2"
+        cur.execute(query)
+        result = cur.fetchall()
+    
     return result
 
 async def get_query_menu(menu_id):
